@@ -39,7 +39,7 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
     const slug = toSlug(name);
     if (!slug) return;
     const newProject: Project = {
-      id: `p_${Date.now()}`,
+      id: `p_${crypto.randomUUID()}`,
       name,
       slug,
       ownership: "owner",
@@ -51,6 +51,7 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
     async (project: Project, name: string) => {
       const slug = toSlug(name);
       if (!slug) return;
+      if (name === project.name && slug === project.slug) return;
       setProjects((prev) =>
         prev.map((item) =>
           item.id === project.id ? { ...item, name, slug } : item,

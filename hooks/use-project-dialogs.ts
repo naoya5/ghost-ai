@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Project } from "@/types/project";
 
@@ -38,6 +38,11 @@ export function useProjectDialogs(
   const [name, setName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const optionsRef = useRef(options);
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
+
   const reset = useCallback(() => {
     setOpenDialog(null);
     setActiveProject(null);
@@ -73,12 +78,12 @@ export function useProjectDialogs(
     if (trimmed.length === 0) return;
     setIsSubmitting(true);
     try {
-      await options.onCreate(trimmed);
+      await optionsRef.current.onCreate(trimmed);
       reset();
     } finally {
       setIsSubmitting(false);
     }
-  }, [isSubmitting, name, options, reset]);
+  }, [isSubmitting, name, reset]);
 
   const submitRename = useCallback(async () => {
     if (isSubmitting || !activeProject) return;
@@ -86,23 +91,23 @@ export function useProjectDialogs(
     if (trimmed.length === 0) return;
     setIsSubmitting(true);
     try {
-      await options.onRename(activeProject, trimmed);
+      await optionsRef.current.onRename(activeProject, trimmed);
       reset();
     } finally {
       setIsSubmitting(false);
     }
-  }, [activeProject, isSubmitting, name, options, reset]);
+  }, [activeProject, isSubmitting, name, reset]);
 
   const submitDelete = useCallback(async () => {
     if (isSubmitting || !activeProject) return;
     setIsSubmitting(true);
     try {
-      await options.onDelete(activeProject);
+      await optionsRef.current.onDelete(activeProject);
       reset();
     } finally {
       setIsSubmitting(false);
     }
-  }, [activeProject, isSubmitting, options, reset]);
+  }, [activeProject, isSubmitting, reset]);
 
   return {
     openDialog,
