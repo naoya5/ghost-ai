@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
 
-import { EditorShell } from "@/components/editor/editor-shell";
+import { clerkAppearance } from "@/lib/clerk-appearance";
 import { cn } from "@/lib/utils";
 import "./globals.css";
 
@@ -24,14 +25,18 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const signInUrl = process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL ?? "/sign-in";
+
   return (
-    <html
-      lang="en"
-      className={cn("h-full antialiased", geistSans.variable, geistMono.variable)}
-    >
-      <body className="min-h-full flex flex-col bg-base text-copy-primary">
-        <EditorShell>{children}</EditorShell>
-      </body>
-    </html>
+    <ClerkProvider appearance={clerkAppearance} afterSignOutUrl={signInUrl}>
+      <html
+        lang="en"
+        className={cn("h-full antialiased", geistSans.variable, geistMono.variable)}
+      >
+        <body className="min-h-full flex flex-col bg-base text-copy-primary">
+          {children}
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }
