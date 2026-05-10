@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { EditorNavbar } from "@/components/editor/editor-navbar";
 import { ProjectSidebar } from "@/components/editor/project-sidebar";
+import { ProjectsProvider } from "@/components/editor/projects-provider";
 
 interface EditorShellProps {
   children: React.ReactNode;
@@ -13,7 +14,7 @@ export function EditorShell({ children }: EditorShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <>
+    <ProjectsProvider>
       <EditorNavbar
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
@@ -23,6 +24,6 @@ export function EditorShell({ children }: EditorShellProps) {
         onClose={() => setIsSidebarOpen(false)}
       />
       {children}
-    </>
+    </ProjectsProvider>
   );
 }
