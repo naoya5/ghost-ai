@@ -4,13 +4,28 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Phase
 
-- Foundations — Authentication (Clerk wired)
+- Foundations — Project Dialogs & Editor Home (mock data only)
 
 ## Current Goal
 
-- Awaiting next feature spec.
+- Awaiting next feature spec (likely Prisma + project persistence).
 
 ## Completed
+
+- Feature 04 — Project Dialogs & Editor Home:
+  - `types/project.ts` — `Project` interface (`id`, `name`, `slug`, `ownership: "owner" | "collaborator"`).
+  - `lib/slug.ts` — `toSlug()` helper. Lowercases, trims, collapses non-alphanumeric runs into `-`, strips leading/trailing dashes.
+  - `lib/mock-projects.ts` — `MOCK_PROJECTS` seed: 2 owned (`Realtime Chat Backend`, `Image Pipeline`) + 1 collaborator (`Team Knowledge Base`).
+  - `hooks/use-project-dialogs.ts` — `useProjectDialogs({ onCreate, onRename, onDelete })`. Owns dialog state (`openDialog: "create" | "rename" | "delete" | null`), the active project, the shared `name` form value, and `isSubmitting`. Exposes `openCreate / openRename / openDelete / close` plus `submitCreate / submitRename / submitDelete` which trim, guard against empty/duplicate input, and reset state on success.
+  - `components/editor/dialogs/create-project-dialog.tsx` — controlled name input with autoFocus + Enter-to-submit, live `toSlug(name)` preview rendered in a mono-font surface, footer Cancel + `Create project` (disabled until slug is non-empty).
+  - `components/editor/dialogs/rename-project-dialog.tsx` — prefilled name input (autoFocus + Enter-to-submit), description shows the current project name, submit disabled when empty or unchanged.
+  - `components/editor/dialogs/delete-project-dialog.tsx` — destructive confirmation only (no input). Footer uses `variant="destructive"` for the Delete button.
+  - `components/editor/projects-provider.tsx` — `ProjectsProvider` + `useProjects()` context. Owns the in-memory project list (mock only), wires the hook callbacks to mutate the list (prepend on create, map on rename, filter on delete), exposes `ownedProjects` / `sharedProjects` / `openCreate` / `openRename` / `openDelete`, and renders all three dialogs at the root so they portal correctly regardless of where they were triggered.
+  - `components/editor/editor-shell.tsx` — wraps `EditorNavbar`, `ProjectSidebar`, and `{children}` in `ProjectsProvider` so the sidebar and the `/editor` home page share the same dialog state.
+  - `components/editor/project-sidebar.tsx` — replaces the empty placeholder content with `ProjectList` (renders `ProjectRow` per project, hover-revealed actions only for owned projects). Project rows show name + mono slug. Action buttons (`Pencil` rename, `Trash2` delete) are rendered only when `onRename`/`onDelete` are passed — the Shared tab omits them. Bottom `New Project` button now calls `openCreate`. Added a mobile-only backdrop scrim (`md:hidden`, `bg-black/50`, fades in with the sidebar) that closes the sidebar on tap.
+  - `app/editor/page.tsx` — converted to a client component. Renders the empty-state heading `Create a project or open an existing one`, description, and a `New Project` button (with `Plus` icon) that calls `openCreate`. No card wrapper.
+  - Slug edge cases verified across 28 inputs (empty / whitespace-only / tabs / CR-LF / full-width space `　` / punctuation-only / emoji / Japanese / mixed Japanese+ASCII / URL-like / surrounding dashes / double dashes / numbers / dots & underscores). Output is always either `""` or a clean `^[a-z0-9]+(-[a-z0-9]+)*$` shape. The rename dialog and the provider's `handleCreate` / `handleRename` both reject names that produce an empty slug (e.g. `"日本語"` alone, `"!!!"`, `"🚀"`) so the UI cannot persist an unrouteable project.
+  - `tsc --noEmit`, `npm run lint`, and `next build` all pass (5 routes unchanged).
 
 - Feature 03 — Auth (Clerk):
   - `@clerk/ui` installed for the `dark` base theme; `@clerk/nextjs` already present.
@@ -46,7 +61,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Next Up
 
-- Awaiting next feature spec (project dialogs / Prisma).
+- Persistence layer (Prisma) for projects so dialog actions stop being mock-only.
 
 ## Open Questions
 
@@ -54,6 +69,10 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Architecture Decisions
 
+- Project list, dialog state, and dialog rendering all live in a single `ProjectsProvider` mounted inside `EditorShell`. Reason: both the `/editor` empty-state page (rendered as `{children}`) and the floating sidebar need to trigger the same dialogs over the same in-memory list. Lifting state up to the provider keeps the dialog instances mounted once and prevents stale state when the sidebar opens/closes. Dialogs are rendered as siblings of `{children}` so Radix portals from the same root regardless of trigger origin.
+- The dialog hook (`useProjectDialogs`) takes mutation callbacks (`onCreate / onRename / onDelete`) instead of owning the project list. Reason: the hook is a presentation-state primitive (open/close, form value, submitting flag) that can later be wired to a real API or Prisma mutation by swapping the callbacks — no churn inside the dialog components.
+- Sidebar item actions (rename/delete) are gated by passing `onRename`/`onDelete` props per row. The Shared tab calls `<ProjectList>` without them, so collaborator projects never render the affordances. Reason: spec requires hiding actions for shared projects; gating by prop presence keeps `ProjectRow` reusable without an extra `ownership` branch.
+- Mobile sidebar dismissal uses a tap-to-close backdrop scrim (`md:hidden`, `bg-black/50`) rendered as a sibling of the `<aside>`, fading in/out with the same transition. Reason: the floating sidebar overlays content rather than pushing it, so there is no off-canvas region to detect outside-taps against.
 - Clerk's `afterSignOutUrl` is set to a **public** route (`/sign-in`) at the `ClerkProvider` level. Reason: `proxy.ts` protects `/` via `auth.protect()`, and Next.js 16's RSC fetch on a soft sign-out navigation does not survive a middleware-driven redirect to `/sign-in` — it fails with `TypeError: Failed to fetch` and falls back to a hard browser navigation. Pointing sign-out directly at the public route keeps the sign-out path on a single, soft navigation with no middleware redirect in the middle.
 - shadcn/ui generated files in `components/ui/*` are treated as protected foundation components per `ai-workflow-rules.md` — not modified after install.
 - Theme tokens are defined as CSS custom properties in `app/globals.css` and exposed to Tailwind via `@theme inline`, per `ui-context.md`. shadcn's variables (`--color-background`, `--color-primary`, etc.) are aliased to project tokens so primitives blend with the project dark theme.
