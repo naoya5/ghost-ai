@@ -4,13 +4,26 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Phase
 
-- Foundations — Project Dialogs & Editor Home (mock data only)
+- Foundations — Persistence layer (Prisma + Prisma Postgres) wired in; dialog actions still use the in-memory mock list.
 
 ## Current Goal
 
-- Awaiting next feature spec (likely Prisma + project persistence).
+- Awaiting next feature spec (likely wiring dialog mutations to Prisma-backed API routes so projects persist beyond the in-memory mock).
 
 ## Completed
+
+- Feature 05 — Prisma schema and data layer:
+  - `prisma/models/project.prisma` — adds the `ProjectStatus` enum (`DRAFT`, `ARCHIVED`) and two models:
+    - `Project`: `id` (cuid PK), `ownerId` (Clerk user id), `name`, optional `description`, `status` (default `DRAFT`), optional `canvasJsonPath` for future Vercel Blob references, `createdAt` / `updatedAt`, plus indexes on `ownerId` and `createdAt`. Has a `collaborators ProjectCollaborator[]` back-relation.
+    - `ProjectCollaborator`: composite primary key `@@id([projectId, email])` (covers spec's unique constraint requirement without adding a synthetic `id`), `createdAt`, `project Project @relation(... onDelete: Cascade)`, and indexes on `email` and `[projectId, createdAt]`.
+  - `lib/prisma.ts` — cached `PrismaClient` singleton with `globalForPrisma` cache in non-production so Next.js hot reloads don't leak connections. Branches by `DATABASE_URL` prefix:
+    - `prisma+postgres://` → `new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) }).$extends(withAccelerate())` (Prisma Postgres / Accelerate-style caching).
+    - otherwise → `new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) })` (direct TCP Postgres).
+    - Throws if `DATABASE_URL` is not set at construction time. Imports `PrismaClient` from `@/app/generated/prisma/client` (path from the existing `generator client` block in `prisma/schema.prisma`).
+  - `npm install @prisma/extension-accelerate` — added the Accelerate client extension. `@prisma/adapter-pg`, `@prisma/client`, `pg`, and `prisma` were already installed.
+  - `npx prisma migrate dev --name init` — connected to the Prisma Postgres database (`db.prisma.io:5432`, schema `public`) and produced `prisma/migrations/20260512063803_init/migration.sql`. SQL creates the `ProjectStatus` enum, both tables, all four indexes, and the `ON DELETE CASCADE` foreign key. The migration is applied to the dev database and is in sync.
+  - `npx prisma generate` regenerates the typed client into `app/generated/prisma/` (already covered by `.gitignore`).
+  - `next build` passes; routes unchanged (5).
 
 - Feature 04 — Project Dialogs & Editor Home:
   - `types/project.ts` — `Project` interface (`id`, `name`, `slug`, `ownership: "owner" | "collaborator"`).
@@ -61,7 +74,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Next Up
 
-- Persistence layer (Prisma) for projects so dialog actions stop being mock-only.
+- Wire the dialog mutations (`ProjectsProvider.handleCreate/Rename/Delete`) to Prisma-backed API routes so `MOCK_PROJECTS` can be replaced. Requires owner-scoped queries keyed on the Clerk user id.
 
 ## Open Questions
 
@@ -69,6 +82,8 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Architecture Decisions
 
+- Prisma 7 client is always constructed with a driver adapter (`@prisma/adapter-pg`'s `PrismaPg`) — Prisma 7 throws when `new PrismaClient()` is called without arguments, so the adapter is required even in the Accelerate branch. The Accelerate branch additionally chains `.$extends(withAccelerate())` from `@prisma/extension-accelerate` to opt the client into Accelerate's caching/extension surface. The single `prisma` export is typed as `ReturnType<typeof createPrismaClient>` so the union of the two branches (extended vs. non-extended client) flows through call sites.
+- `ProjectCollaborator` uses a composite primary key (`@@id([projectId, email])`) instead of a synthetic `id` column. Reason: spec required a unique constraint on `(projectId, email)` plus "no extra fields unless required by Prisma" — composite PK satisfies both the uniqueness constraint and Prisma's primary-key requirement without adding a column.
 - Project list, dialog state, and dialog rendering all live in a single `ProjectsProvider` mounted inside `EditorShell`. Reason: both the `/editor` empty-state page (rendered as `{children}`) and the floating sidebar need to trigger the same dialogs over the same in-memory list. Lifting state up to the provider keeps the dialog instances mounted once and prevents stale state when the sidebar opens/closes. Dialogs are rendered as siblings of `{children}` so Radix portals from the same root regardless of trigger origin.
 - The dialog hook (`useProjectDialogs`) takes mutation callbacks (`onCreate / onRename / onDelete`) instead of owning the project list. Reason: the hook is a presentation-state primitive (open/close, form value, submitting flag) that can later be wired to a real API or Prisma mutation by swapping the callbacks — no churn inside the dialog components.
 - Sidebar item actions (rename/delete) are gated by passing `onRename`/`onDelete` props per row. The Shared tab calls `<ProjectList>` without them, so collaborator projects never render the affordances. Reason: spec requires hiding actions for shared projects; gating by prop presence keeps `ProjectRow` reusable without an extra `ownership` branch.
