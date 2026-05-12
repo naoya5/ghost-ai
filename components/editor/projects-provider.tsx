@@ -1,13 +1,11 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useMemo } from "react";
 
 import { CreateProjectDialog } from "@/components/editor/dialogs/create-project-dialog";
 import { DeleteProjectDialog } from "@/components/editor/dialogs/delete-project-dialog";
 import { RenameProjectDialog } from "@/components/editor/dialogs/rename-project-dialog";
-import { useProjectDialogs } from "@/hooks/use-project-dialogs";
-import { MOCK_PROJECTS } from "@/lib/mock-projects";
-import { toSlug } from "@/lib/slug";
+import { useProjectActions } from "@/hooks/use-project-actions";
 import type { Project } from "@/types/project";
 
 interface ProjectsContextValue {
@@ -29,71 +27,32 @@ export function useProjects(): ProjectsContextValue {
 }
 
 interface ProjectsProviderProps {
+  ownedProjects: Project[];
+  sharedProjects: Project[];
   children: React.ReactNode;
 }
 
-export function ProjectsProvider({ children }: ProjectsProviderProps) {
-  const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
-
-  const handleCreate = useCallback(async (name: string) => {
-    const slug = toSlug(name);
-    if (!slug) return;
-    const newProject: Project = {
-      id: `p_${crypto.randomUUID()}`,
-      name,
-      slug,
-      ownership: "owner",
-    };
-    setProjects((prev) => [newProject, ...prev]);
-  }, []);
-
-  const handleRename = useCallback(
-    async (project: Project, name: string) => {
-      const slug = toSlug(name);
-      if (!slug) return;
-      if (name === project.name && slug === project.slug) return;
-      setProjects((prev) =>
-        prev.map((item) =>
-          item.id === project.id ? { ...item, name, slug } : item,
-        ),
-      );
-    },
-    [],
-  );
-
-  const handleDelete = useCallback(async (project: Project) => {
-    setProjects((prev) => prev.filter((item) => item.id !== project.id));
-  }, []);
-
-  const dialogs = useProjectDialogs({
-    onCreate: handleCreate,
-    onRename: handleRename,
-    onDelete: handleDelete,
-  });
-
-  const ownedProjects = useMemo(
-    () => projects.filter((project) => project.ownership === "owner"),
-    [projects],
-  );
-  const sharedProjects = useMemo(
-    () => projects.filter((project) => project.ownership === "collaborator"),
-    [projects],
-  );
+export function ProjectsProvider({
+  ownedProjects,
+  sharedProjects,
+  children,
+}: ProjectsProviderProps) {
+  const actions = useProjectActions();
 
   const value = useMemo<ProjectsContextValue>(
     () => ({
       ownedProjects,
       sharedProjects,
-      openCreate: dialogs.openCreate,
-      openRename: dialogs.openRename,
-      openDelete: dialogs.openDelete,
+      openCreate: actions.openCreate,
+      openRename: actions.openRename,
+      openDelete: actions.openDelete,
     }),
     [
       ownedProjects,
       sharedProjects,
-      dialogs.openCreate,
-      dialogs.openRename,
-      dialogs.openDelete,
+      actions.openCreate,
+      actions.openRename,
+      actions.openDelete,
     ],
   );
 
@@ -101,28 +60,29 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
     <ProjectsContext.Provider value={value}>
       {children}
       <CreateProjectDialog
-        isOpen={dialogs.isCreateOpen}
-        isSubmitting={dialogs.isSubmitting}
-        name={dialogs.name}
-        onNameChange={dialogs.setName}
-        onClose={dialogs.close}
-        onSubmit={dialogs.submitCreate}
+        isOpen={actions.isCreateOpen}
+        isSubmitting={actions.isSubmitting}
+        name={actions.name}
+        roomId={actions.roomId}
+        onNameChange={actions.setName}
+        onClose={actions.close}
+        onSubmit={actions.submitCreate}
       />
       <RenameProjectDialog
-        isOpen={dialogs.isRenameOpen}
-        project={dialogs.activeProject}
-        isSubmitting={dialogs.isSubmitting}
-        name={dialogs.name}
-        onNameChange={dialogs.setName}
-        onClose={dialogs.close}
-        onSubmit={dialogs.submitRename}
+        isOpen={actions.isRenameOpen}
+        project={actions.activeProject}
+        isSubmitting={actions.isSubmitting}
+        name={actions.name}
+        onNameChange={actions.setName}
+        onClose={actions.close}
+        onSubmit={actions.submitRename}
       />
       <DeleteProjectDialog
-        isOpen={dialogs.isDeleteOpen}
-        project={dialogs.activeProject}
-        isSubmitting={dialogs.isSubmitting}
-        onClose={dialogs.close}
-        onSubmit={dialogs.submitDelete}
+        isOpen={actions.isDeleteOpen}
+        project={actions.activeProject}
+        isSubmitting={actions.isSubmitting}
+        onClose={actions.close}
+        onSubmit={actions.submitDelete}
       />
     </ProjectsContext.Provider>
   );

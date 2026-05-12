@@ -1,13 +1,6 @@
-"use client";
-
-import { PlusIcon } from "lucide-react";
-
-import { useProjects } from "@/components/editor/projects-provider";
-import { Button } from "@/components/ui/button";
+import { NewProjectButton } from "@/components/editor/new-project-button";
 
 export default function EditorHome() {
-  const { openCreate } = useProjects();
-
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
       <div className="max-w-md space-y-2">
@@ -19,10 +12,7 @@ export default function EditorHome() {
           sidebar.
         </p>
       </div>
-      <Button onClick={openCreate}>
-        <PlusIcon />
-        New Project
-      </Button>
+      <NewProjectButton />
     </main>
   );
 }
