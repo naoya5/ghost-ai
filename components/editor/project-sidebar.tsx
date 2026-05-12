@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   PencilIcon,
   PlusIcon,
@@ -21,9 +22,14 @@ import type { Project } from "@/types/project";
 interface ProjectSidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  currentProjectId: string | null;
 }
 
-export function ProjectSidebar({ isOpen, onClose }: ProjectSidebarProps) {
+export function ProjectSidebar({
+  isOpen,
+  onClose,
+  currentProjectId,
+}: ProjectSidebarProps) {
   const {
     ownedProjects,
     sharedProjects,
@@ -84,6 +90,7 @@ export function ProjectSidebar({ isOpen, onClose }: ProjectSidebarProps) {
             <ProjectList
               projects={ownedProjects}
               emptyText="No projects yet."
+              currentProjectId={currentProjectId}
               onRename={openRename}
               onDelete={openDelete}
             />
@@ -95,6 +102,7 @@ export function ProjectSidebar({ isOpen, onClose }: ProjectSidebarProps) {
             <ProjectList
               projects={sharedProjects}
               emptyText="No shared projects yet."
+              currentProjectId={currentProjectId}
             />
           </TabsContent>
         </Tabs>
@@ -113,6 +121,7 @@ export function ProjectSidebar({ isOpen, onClose }: ProjectSidebarProps) {
 interface ProjectListProps {
   projects: Project[];
   emptyText: string;
+  currentProjectId: string | null;
   onRename?: (project: Project) => void;
   onDelete?: (project: Project) => void;
 }
@@ -120,6 +129,7 @@ interface ProjectListProps {
 function ProjectList({
   projects,
   emptyText,
+  currentProjectId,
   onRename,
   onDelete,
 }: ProjectListProps) {
@@ -137,6 +147,7 @@ function ProjectList({
         <li key={project.id}>
           <ProjectRow
             project={project}
+            isActive={project.id === currentProjectId}
             onRename={onRename}
             onDelete={onDelete}
           />
@@ -148,26 +159,43 @@ function ProjectList({
 
 interface ProjectRowProps {
   project: Project;
+  isActive: boolean;
   onRename?: (project: Project) => void;
   onDelete?: (project: Project) => void;
 }
 
-function ProjectRow({ project, onRename, onDelete }: ProjectRowProps) {
+function ProjectRow({
+  project,
+  isActive,
+  onRename,
+  onDelete,
+}: ProjectRowProps) {
   const showActions = Boolean(onRename && onDelete);
 
   return (
-    <div className="group flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-elevated">
-      <button
-        type="button"
-        className="flex min-w-0 flex-1 flex-col items-start text-left"
+    <div
+      className={cn(
+        "group flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-elevated",
+        isActive && "bg-accent-dim hover:bg-accent-dim",
+      )}
+    >
+      <Link
+        href={`/editor/${project.id}`}
+        aria-current={isActive ? "page" : undefined}
+        className="flex min-w-0 flex-1 flex-col items-start text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded"
       >
-        <span className="w-full truncate text-sm text-copy-primary">
+        <span
+          className={cn(
+            "w-full truncate text-sm",
+            isActive ? "text-brand" : "text-copy-primary",
+          )}
+        >
           {project.name}
         </span>
         <span className="w-full truncate font-mono text-[11px] text-copy-muted">
           {project.slug}
         </span>
-      </button>
+      </Link>
       {showActions && onRename && onDelete && (
         <div className="flex items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           <Button
