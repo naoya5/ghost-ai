@@ -6,7 +6,7 @@ Build the `/editor/[roomId]` workspace shell with server-side access checks. No 
 
 Before rendering:
 
-- unauthenticated users redirect to `/sign-in`
+- unauthenticated users redirect to `/sign-in?redirect_url=/editor/[roomId]` so the sign-in flow returns them to the original editor route after authentication
 - users without project access see `AccessDenied`
 - non-existent projects also show `AccessDenied`
 

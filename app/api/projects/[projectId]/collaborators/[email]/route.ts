@@ -14,7 +14,16 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
   }
 
   const { projectId, email: rawEmail } = await params;
-  const email = normalizeCollaboratorEmail(decodeURIComponent(rawEmail));
+  let decodedEmail: string;
+  try {
+    decodedEmail = decodeURIComponent(rawEmail);
+  } catch {
+    return Response.json(
+      { error: "valid email is required" },
+      { status: 400 },
+    );
+  }
+  const email = normalizeCollaboratorEmail(decodedEmail);
   if (!email) {
     return Response.json(
       { error: "valid email is required" },
@@ -33,9 +42,9 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  await prisma.projectCollaborator
-    .delete({ where: { projectId_email: { projectId, email } } })
-    .catch(() => undefined);
+  await prisma.projectCollaborator.deleteMany({
+    where: { projectId, email },
+  });
 
   return new Response(null, { status: 204 });
 }

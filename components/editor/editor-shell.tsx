@@ -26,7 +26,9 @@ export function EditorShell({
   const pathname = usePathname();
   const [isProjectsSidebarOpen, setIsProjectsSidebarOpen] = useState(false);
   const [isAiSidebarOpen, setIsAiSidebarOpen] = useState(false);
-  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [shareOpenProjectId, setShareOpenProjectId] = useState<string | null>(
+    null,
+  );
 
   const currentProjectId = useMemo(() => {
     if (!pathname) return null;
@@ -43,6 +45,9 @@ export function EditorShell({
     );
   }, [currentProjectId, ownedProjects, sharedProjects]);
 
+  const isShareOpen =
+    shareOpenProjectId !== null && shareOpenProjectId === currentProjectId;
+
   return (
     <ProjectsProvider
       ownedProjects={ownedProjects}
@@ -57,7 +62,7 @@ export function EditorShell({
           }
           isAiSidebarOpen={isAiSidebarOpen}
           onToggleAiSidebar={() => setIsAiSidebarOpen((prev) => !prev)}
-          onOpenShare={() => setIsShareOpen(true)}
+          onOpenShare={() => setShareOpenProjectId(currentProjectId)}
         />
         <ProjectSidebar
           isOpen={isProjectsSidebarOpen}
@@ -78,7 +83,7 @@ export function EditorShell({
         isOpen={isShareOpen && currentProject !== null}
         project={currentProject}
         canManage={currentProject?.ownership === "owner"}
-        onClose={() => setIsShareOpen(false)}
+        onClose={() => setShareOpenProjectId(null)}
       />
     </ProjectsProvider>
   );

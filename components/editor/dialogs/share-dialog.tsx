@@ -66,15 +66,18 @@ export function ShareDialog({
         const data = (await response.json()) as {
           collaborators: Collaborator[];
         };
+        if (controller.signal.aborted) return;
         setCollaborators(data.collaborators);
       })
       .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
         }
         setLoadError("Failed to load collaborators.");
       })
       .finally(() => {
+        if (controller.signal.aborted) return;
         setIsLoading(false);
       });
     return () => controller.abort();

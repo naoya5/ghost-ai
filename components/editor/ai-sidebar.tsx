@@ -14,6 +14,7 @@ export function AiSidebar({ isOpen, onClose }: AiSidebarProps) {
   return (
     <aside
       aria-hidden={!isOpen}
+      inert={!isOpen}
       className={cn(
         "flex h-full w-80 shrink-0 flex-col border-l border-surface-border bg-surface transition-[width,opacity] duration-200 ease-out",
         isOpen
