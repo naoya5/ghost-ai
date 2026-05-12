@@ -46,3 +46,5 @@ docs
 
 # UI screenshots / mockups
 .ui/
+
+/app/generated/prisma
