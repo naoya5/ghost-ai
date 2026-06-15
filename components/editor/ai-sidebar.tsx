@@ -16,10 +16,8 @@ export function AiSidebar({ isOpen, onClose }: AiSidebarProps) {
       aria-hidden={!isOpen}
       inert={!isOpen}
       className={cn(
-        "flex h-full w-80 shrink-0 flex-col border-l border-surface-border bg-surface transition-[width,opacity] duration-200 ease-out",
-        isOpen
-          ? "w-80 opacity-100"
-          : "w-0 -mr-px overflow-hidden opacity-0 pointer-events-none",
+        "absolute inset-y-0 right-0 z-40 flex w-80 flex-col border-l border-surface-border bg-surface/95 shadow-2xl backdrop-blur-sm transition-transform duration-200 ease-out",
+        isOpen ? "translate-x-0" : "pointer-events-none translate-x-full",
       )}
     >
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-surface-border px-3">
