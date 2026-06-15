@@ -64,13 +64,13 @@ export function EditorShell({
           onToggleAiSidebar={() => setIsAiSidebarOpen((prev) => !prev)}
           onOpenShare={() => setShareOpenProjectId(currentProjectId)}
         />
-        <ProjectSidebar
-          isOpen={isProjectsSidebarOpen}
-          onClose={() => setIsProjectsSidebarOpen(false)}
-          currentProjectId={currentProjectId}
-        />
-        <div className="flex flex-1 overflow-hidden">
-          <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
+        <div className="relative flex-1 overflow-hidden">
+          <div className="absolute inset-0 flex flex-col">{children}</div>
+          <ProjectSidebar
+            isOpen={isProjectsSidebarOpen}
+            onClose={() => setIsProjectsSidebarOpen(false)}
+            currentProjectId={currentProjectId}
+          />
           {currentProject ? (
             <AiSidebar
               isOpen={isAiSidebarOpen}

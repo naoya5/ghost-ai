@@ -18,7 +18,12 @@ prismaやclerkなどのはAgent skillsが公式から出ているのでそれら
 ```bash
 npx skills add clerk/skills
 npx skills add prisma/skills
+npx skills add liveblocks/skills
 ```
+
+## 使ってる外部機能
+
+- Liveblock: https://liveblocks.io/
 
 ## projects
 
