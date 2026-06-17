@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  LayoutTemplateIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   PanelRightCloseIcon,
@@ -19,6 +20,7 @@ interface EditorNavbarProps {
   isAiSidebarOpen: boolean;
   onToggleAiSidebar: () => void;
   onOpenShare: () => void;
+  onOpenTemplates: () => void;
 }
 
 export function EditorNavbar({
@@ -28,6 +30,7 @@ export function EditorNavbar({
   isAiSidebarOpen,
   onToggleAiSidebar,
   onOpenShare,
+  onOpenTemplates,
 }: EditorNavbarProps) {
   const ProjectsToggleIcon = isProjectsSidebarOpen
     ? PanelLeftCloseIcon
@@ -66,6 +69,15 @@ export function EditorNavbar({
       <div className="flex flex-1 items-center justify-end gap-1">
         {currentProject ? (
           <>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Starter templates"
+              onClick={onOpenTemplates}
+            >
+              <LayoutTemplateIcon />
+              Templates
+            </Button>
             <Button
               variant="ghost"
               size="sm"
