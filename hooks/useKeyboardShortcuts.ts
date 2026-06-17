@@ -47,21 +47,21 @@ export function useKeyboardShortcuts({
       }
 
       // Redo: Cmd/Ctrl + Shift + Z
-      if (isMeta && event.shiftKey && event.key === "z") {
+      if (isMeta && event.shiftKey && event.code === "KeyZ") {
         event.preventDefault();
         onRedo();
         return;
       }
 
       // Redo: Cmd/Ctrl + Y
-      if (isMeta && !event.shiftKey && event.key === "y") {
+      if (isMeta && !event.shiftKey && event.code === "KeyY") {
         event.preventDefault();
         onRedo();
         return;
       }
 
       // Undo: Cmd/Ctrl + Z
-      if (isMeta && !event.shiftKey && event.key === "z") {
+      if (isMeta && !event.shiftKey && event.code === "KeyZ") {
         event.preventDefault();
         onUndo();
         return;

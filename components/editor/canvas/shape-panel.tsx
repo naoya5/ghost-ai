@@ -196,11 +196,15 @@ export function ShapePanel() {
   }, []);
 
   useEffect(() => {
+    // Native HTML5 drag suppresses `mousemove`; `dragover` fires instead, so
+    // listen for both to keep the ghost following the cursor during a drag.
     window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("dragover", onMouseMove);
     window.addEventListener("dragend", hideGhost);
     window.addEventListener("drop", hideGhost);
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("dragover", onMouseMove);
       window.removeEventListener("dragend", hideGhost);
       window.removeEventListener("drop", hideGhost);
     };
