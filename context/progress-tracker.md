@@ -4,13 +4,48 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Phase
 
-- Collaborative canvas — the React Flow surface is live. `/editor/[roomId]` now mounts a Liveblocks room (`LiveblocksProvider` → `RoomProvider` → `ErrorBoundary` → `ClientSideSuspense`) and renders a `useLiveblocksFlow`-backed React Flow canvas with a bottom shape panel for creating nodes. Node/edge schema lives in `types/canvas.ts`. Custom node rendering, edge styling, persistence, and AI behavior are still to come.
+- Collaborative canvas — the React Flow surface is feature-rich. `/editor/[roomId]` mounts a Liveblocks room and renders a `useLiveblocksFlow`-backed React Flow canvas. Nodes now have shape-specific visuals (CSS rectangle/pill/circle + SVG diamond/hexagon/cylinder), resize handles, inline label editing, a per-node color toolbar, and four-side connection handles. Edges use a custom right-angle renderer with arrowheads and inline pill labels. A bottom-left control bar plus keyboard shortcuts drive zoom and Liveblocks undo/redo. A navbar "Templates" button opens a starter-template library that replaces the canvas with a pre-built diagram. Persistence (Vercel Blob) and AI generation are still to come.
 
 ## Current Goal
 
-- Flesh out the canvas: shape-specific node visuals (SVG diamond/hexagon/cylinder), edge styling (smooth-step + arrow), connection handles polish, and a controls/toolbar layer. Persistence and AI generation come after.
+- Live cursors (`Cursors` from `@liveblocks/react-flow`), persistence to Vercel Blob, and AI generation. Canvas interaction/visual work (Features 13–17) is complete.
 
 ## Completed
+
+- Feature 18 — Starter template library:
+  - `components/editor/starter-templates.ts` (new) — `CanvasTemplate` type + `CANVAS_TEMPLATES` array with 3 templates (Microservices Architecture / CI/CD Pipeline / Event-Driven System). Each has `id`/`name`/`description`/nodes/edges built from shared canvas types (`CanvasNode`/`CanvasEdge`/`CANVAS_NODE_TYPE`/`CANVAS_EDGE_TYPE`) and existing `NODE_COLORS` fills. `makeNode`/`makeEdge` helpers keep the data readable.
+  - `components/editor/starter-templates-modal.tsx` (new) — `Dialog`-based modal, scrollable card grid (`sm:grid-cols-2`, `max-h-[60vh] overflow-y-auto`). Each card shows name + description + a lightweight inline SVG preview (no React Flow instance): `buildPreview` computes bounds from node positions and fits them into a fixed 280×150 viewport, draws edges as straight lines between node centers and nodes by shape + `getNodeColorPair` color. "Import template" button calls `onImport` then `onClose`.
+  - `components/editor/templates-provider.tsx` (new) — lightweight React Context exposing `{ isOpen, close }` across the room boundary; `useTemplates()` returns `null` outside a provider so the empty `/editor` state stays safe.
+  - `editor-navbar.tsx` — added `onOpenTemplates` prop + a `LayoutTemplateIcon` "Templates" button (only when `currentProject` is set, beside Share).
+  - `editor-shell.tsx` — owns `isTemplatesOpen` state, wires it to the navbar, and wraps `{children}` in `TemplatesProvider` (memoized `{ isOpen, close }`).
+  - `canvas/flow-canvas.tsx` — consumes `useTemplates()` and mounts `<StarterTemplatesModal>` inside the room (where `useLiveblocksFlow` is available). `onImportTemplate` clears existing edges/nodes via `remove` changes then adds cloned template nodes/edges via `add` changes, then `fitView` inside a `requestAnimationFrame`.
+  - `npm run build` passes (11 routes, TypeScript clean); `eslint` clean for all touched files.
+
+- Feature 17 — Canvas ergonomics (control bar + keyboard shortcuts):
+  - `hooks/useKeyboardShortcuts.ts` (new) — `window` `keydown` listener. Ignores shortcuts while typing in `input` / `textarea` / `select` / `contenteditable`. Shortcuts: `+`/`=` zoom in, `-` zoom out, `Cmd/Ctrl+Z` undo, `Cmd/Ctrl+Shift+Z` & `Cmd/Ctrl+Y` redo. Types zoom controls via a minimal `ZoomControls` interface to avoid `ReactFlowInstance` generic-arg friction.
+  - `components/editor/canvas/canvas-control-bar.tsx` (new) — pill control bar pinned bottom-left (`bottom-6 left-6`, clear of the bottom-center shape panel). Zoom group (zoom out / fit view / zoom in) and history group (undo / redo) split by a thin divider. Disabled buttons dimmed (`opacity-30`). Uses theme tokens (`bg-surface/90`, `border-surface-border`, `text-copy-*`, `bg-elevated`).
+  - `components/editor/canvas/flow-canvas.tsx` — captured `useReactFlow()` as `reactFlow`; imported `useUndo`/`useRedo`/`useCanUndo`/`useCanRedo` from `@liveblocks/react/suspense`; wired `useKeyboardShortcuts({ reactFlow, undo, redo })`; mounted `<CanvasControlBar>` above `<ShapePanel>`. Zoom uses a short `{ duration }` animation; undo/redo use Liveblocks history with can-undo/can-redo gating.
+  - `npm run build` passes (7 pages); `eslint` clean for touched files.
+
+- Feature 16 — Custom edges + connection handles + inline edge labels:
+  - `types/canvas.ts` — `CanvasEdge` data type changed from `Record<string, unknown>` to `CanvasEdgeData` (`{ label?: string }`) for type-safe label updates.
+  - `components/editor/canvas/canvas-edge.tsx` (new) — `CanvasEdgeRenderer`. Right-angle routing via `getSmoothStepPath`; `BaseEdge` with `interactionWidth: 20` so edges are easy to hover/click without thickening the visible line. Dim at rest (opacity 0.55), bright on hover/select. `MarkerType.ArrowClosed` arrowhead. Inline label editing via `EdgeLabelRenderer` positioned at the `labelX`/`labelY` returned by `getSmoothStepPath` (no manual midpoint math); double-click to edit, save on blur/Enter/Escape through `updateEdgeData`. Saved labels render as pill badges; active edges with no label show a faint hint. `nodrag nopan` + `stopPropagation` keep label interactions from dragging/panning.
+  - `components/editor/canvas/flow-canvas.tsx` — registered `edgeTypes: { [CANVAS_EDGE_TYPE]: CanvasEdgeRenderer }` and `defaultEdgeOptions` (type `CANVAS_EDGE_TYPE`, `ArrowClosed`, thin light stroke) so new connections use the custom renderer.
+  - `components/editor/canvas/canvas-node.tsx` — handles restyled to small white dots with a dark border; hidden by default and faded in on node hover/select (`nodeHovered` state via `onMouseEnter`/`onMouseLeave`) on both CSS and SVG shape paths. Top/right/bottom/left handles, loose connection mode (any handle to any handle).
+  - `npm run build` passes; `eslint` clean for touched files.
+
+- Feature 15 — Node color toolbar:
+  - `components/editor/canvas/canvas-node.tsx` (only file touched) — added an in-file `ColorToolbar` rendered only when the node is `selected`, positioned just above the node (`absolute`, `bottom: calc(100% + 8px)`, centered). One swatch per `NODE_COLORS` pair (reused from `types/canvas.ts`, no new palette). Active swatch gets a text-color border + faint ring; hover shows a tight controlled glow (`box-shadow` based on the pair's text color). `nodrag nopan` + `stopPropagation` on pointer/mouse/click so toolbar interactions never drag the node or pan the canvas. Selecting a swatch calls `updateNodeData(id, { color: pair.fill })`; `getNodeColorPair` resolves the paired text color so background + text update together immediately on the collaborative state (no server call).
+  - `npm run build` passes; `eslint` clean for `canvas-node.tsx`.
+
+- Feature 14 — Node resize + inline label editing:
+  - `components/editor/canvas/canvas-node.tsx` (only file touched) — added React Flow `NodeResizer` (`isVisible={selected}`, `minWidth={80}`/`minHeight={40}`, subtle cyan `--accent-primary` handles) to both CSS and SVG shape branches so resizing flows through the existing node-change pipeline. Added an inline `LabelEditor` (absolute-positioned `textarea` overlaying the label, `autoFocus`, `nodrag` class + `stopPropagation` so editing never drags/pans the canvas, closes on blur or `Escape`). Double-clicking the label area opens editing; empty labels show a centered placeholder; the static label hides while editing to avoid layout shift. Label writes go through `useReactFlow().updateNodeData(id, { label })`, keeping updates on the collaborative sync path.
+  - `npm run build` passes; `eslint` clean for `canvas-node.tsx`.
+
+- Feature 13 — Node shape rendering + drag preview:
+  - `components/editor/canvas/canvas-node.tsx` — replaced the placeholder rounded-rectangle renderer with shape-specific rendering. CSS shapes: `rectangle` (`rounded-xl`), `pill` (`rounded-full`), `circle` (square + `rounded-full`). SVG shapes: `diamond` (polygon), `hexagon` (6-vertex polygon), `cylinder` (ellipse + rect + ellipse stack) that scale with the node `width`/`height` (read from `NodeProps`). Borders are subtle (`var(--border-subtle)`) at rest, brighter (node text color) when selected. Still backed by `useLiveblocksFlow` collaborative state.
+  - `components/editor/canvas/shape-panel.tsx` — added a drag ghost preview. `dragstart` calls `setDragImage` to hide the browser default drag image and renders a custom `ShapeGhost` that follows the cursor (`position: fixed`, `pointer-events-none`, `z-50`). Ghost reuses the same CSS/SVG shape logic and the dragged shape's default size; hidden on `window` `dragend`/`drop`.
+  - `npm run build` passes (no type errors). `npm run lint` clean for touched files (the two pre-existing `share-dialog.tsx` errors remain, untouched).
 
 - Canvas layout/visual fixes (issue: `context_ja/current-issues/current-issues-liveblocks-canvas.md`):
   - **Root cause of the "floating card" look** — the AI sidebar was a flex *sibling* of the canvas (`<div className="flex flex-1"><canvas/><AiSidebar/></div>`), so it shrank the canvas and the dotted background stopped at the sidebar's left border. The projects sidebar was `fixed inset-y-0` (overlaying the navbar too).
@@ -170,7 +205,8 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Next Up
 
-- Custom node visuals — shape-specific rendering for diamond / hexagon / cylinder as inline SVGs (per `ui-context.md`), plus rectangle / circle / pill CSS treatments. Edge styling (smooth-step path + arrow marker, default `#f8fafc`). A controls/toolbar layer. Then live cursors (`Cursors` from `@liveblocks/react-flow`), persistence to Vercel Blob, and AI generation.
+- Live cursors (`Cursors` from `@liveblocks/react-flow`) using the `Presence.cursor` already seeded in `liveblocks.config.ts`. Then persistence to Vercel Blob (`canvasJsonPath` on `Project`) and AI generation. Note: `LIVEBLOCKS_SECRET_KEY` must be provisioned in `.env.local` before any of this works at runtime (see Open Questions).
+- Spec housekeeping: `context/feature-specs/15-node-color-toolbar.md` and `16-nodes-color-toolbar.md` are byte-identical duplicates (color toolbar); the unique 16 is `16-edge-behavior.md`. Feature 17's spec file is named `17-canvas-ergonomics.md.md` (double extension). Consider renaming/deduping.
 
 ## Open Questions
 
@@ -178,6 +214,8 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Architecture Decisions
 
+- Starter-template import crosses the Liveblocks room boundary via a lightweight `TemplatesProvider` context. Reason: the navbar lives in `editor-shell` (outside `RoomProvider`) but the import must mutate the room's `useLiveblocksFlow` state. The shell owns `isTemplatesOpen` and exposes `{ isOpen, close }` through context; `FlowCanvas` (inside the room) consumes it, mounts the modal, and runs the import where the collaborative state is reachable. React context passes through `RoomProvider` normally, keeping the established "shell owns state, canvas updates state" pattern intact.
+- Template import replaces the canvas through `onNodesChange`/`onEdgesChange` `remove`+`add` changes, not `setNodes`/`setEdges`. Reason: `useLiveblocksFlow`'s return value only exposes `onNodesChange`/`onEdgesChange`/`onConnect`/`onDelete` (no direct setters), so clearing then adding via change events is what keeps the replacement on the Storage-synced collaborative path. `fitView` runs inside a `requestAnimationFrame` so it measures after the new nodes mount.
 - Both editor sidebars float *over* the canvas (`absolute inset-y-0` inside a `relative ... overflow-hidden` stage) rather than participating in the layout flow. Reason: the canvas must read as an edge-to-edge infinite surface (Figma/Excalidraw feel) with the dotted background visible beneath the panels; a flex layout would shrink the canvas and box it in. The stage's `overflow-hidden` doubles as the clip that fully hides each sidebar when it translates off-screen, so there is no peeking sliver to manage with exact pixel offsets.
 - React Flow `<Background>` / `<MiniMap>` are themed via component color props (hex matching the design tokens) rather than Tailwind classes. Reason: these are SVG-driven library widgets that only accept color *values* (not class names), so the same "transported value" exception used for cursor colors applies — the dark hex values mirror the `globals.css` tokens (`#080809` base, `#2a2a30` border, `#111114` surface).
 

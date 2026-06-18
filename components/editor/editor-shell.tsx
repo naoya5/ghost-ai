@@ -8,6 +8,7 @@ import { EditorNavbar } from "@/components/editor/editor-navbar";
 import { ProjectSidebar } from "@/components/editor/project-sidebar";
 import { ProjectsProvider } from "@/components/editor/projects-provider";
 import { ShareDialog } from "@/components/editor/dialogs/share-dialog";
+import { TemplatesProvider } from "@/components/editor/templates-provider";
 import type { Project } from "@/types/project";
 
 interface EditorShellProps {
@@ -29,6 +30,7 @@ export function EditorShell({
   const [shareOpenProjectId, setShareOpenProjectId] = useState<string | null>(
     null,
   );
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
 
   const currentProjectId = useMemo(() => {
     if (!pathname) return null;
@@ -48,6 +50,14 @@ export function EditorShell({
   const isShareOpen =
     shareOpenProjectId !== null && shareOpenProjectId === currentProjectId;
 
+  const templatesValue = useMemo(
+    () => ({
+      isOpen: isTemplatesOpen,
+      close: () => setIsTemplatesOpen(false),
+    }),
+    [isTemplatesOpen],
+  );
+
   return (
     <ProjectsProvider
       ownedProjects={ownedProjects}
@@ -63,9 +73,14 @@ export function EditorShell({
           isAiSidebarOpen={isAiSidebarOpen}
           onToggleAiSidebar={() => setIsAiSidebarOpen((prev) => !prev)}
           onOpenShare={() => setShareOpenProjectId(currentProjectId)}
+          onOpenTemplates={() => setIsTemplatesOpen(true)}
         />
         <div className="relative flex-1 overflow-hidden">
-          <div className="absolute inset-0 flex flex-col">{children}</div>
+          <div className="absolute inset-0 flex flex-col">
+            <TemplatesProvider value={templatesValue}>
+              {children}
+            </TemplatesProvider>
+          </div>
           <ProjectSidebar
             isOpen={isProjectsSidebarOpen}
             onClose={() => setIsProjectsSidebarOpen(false)}
