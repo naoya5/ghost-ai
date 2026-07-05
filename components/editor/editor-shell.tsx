@@ -3,7 +3,8 @@
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import { AiSidebar } from "@/components/editor/ai-sidebar";
+import { AiSidebarProvider } from "@/components/editor/ai-sidebar-provider";
+import { CanvasSaveProvider } from "@/components/editor/canvas/canvas-save-context";
 import { EditorNavbar } from "@/components/editor/editor-navbar";
 import { ProjectSidebar } from "@/components/editor/project-sidebar";
 import { ProjectsProvider } from "@/components/editor/projects-provider";
@@ -58,14 +59,24 @@ export function EditorShell({
     [isTemplatesOpen],
   );
 
+  const aiSidebarValue = useMemo(
+    () => ({
+      isOpen: isAiSidebarOpen,
+      close: () => setIsAiSidebarOpen(false),
+    }),
+    [isAiSidebarOpen],
+  );
+
   return (
     <ProjectsProvider
       ownedProjects={ownedProjects}
       sharedProjects={sharedProjects}
     >
-      <div className="flex h-svh flex-col bg-base">
+      <CanvasSaveProvider>
+        <div className="flex h-svh flex-col bg-base">
         <EditorNavbar
           currentProject={currentProject}
+          isWorkspace={currentProjectId !== null}
           isProjectsSidebarOpen={isProjectsSidebarOpen}
           onToggleProjectsSidebar={() =>
             setIsProjectsSidebarOpen((prev) => !prev)
@@ -77,29 +88,30 @@ export function EditorShell({
         />
         <div className="relative flex-1 overflow-hidden">
           <div className="absolute inset-0 flex flex-col">
-            <TemplatesProvider value={templatesValue}>
-              {children}
-            </TemplatesProvider>
+            {/* The AI sidebar is mounted inside the canvas room (see
+                flow-canvas.tsx) so it can read the shared ai-status-feed and
+                presence. The navbar toggle still owns the open state and passes
+                it down through this provider. */}
+            <AiSidebarProvider value={aiSidebarValue}>
+              <TemplatesProvider value={templatesValue}>
+                {children}
+              </TemplatesProvider>
+            </AiSidebarProvider>
           </div>
           <ProjectSidebar
             isOpen={isProjectsSidebarOpen}
             onClose={() => setIsProjectsSidebarOpen(false)}
             currentProjectId={currentProjectId}
           />
-          {currentProject ? (
-            <AiSidebar
-              isOpen={isAiSidebarOpen}
-              onClose={() => setIsAiSidebarOpen(false)}
-            />
-          ) : null}
         </div>
       </div>
-      <ShareDialog
-        isOpen={isShareOpen && currentProject !== null}
-        project={currentProject}
-        canManage={currentProject?.ownership === "owner"}
-        onClose={() => setShareOpenProjectId(null)}
-      />
+        <ShareDialog
+          isOpen={isShareOpen && currentProject !== null}
+          project={currentProject}
+          canManage={currentProject?.ownership === "owner"}
+          onClose={() => setShareOpenProjectId(null)}
+        />
+      </CanvasSaveProvider>
     </ProjectsProvider>
   );
 }

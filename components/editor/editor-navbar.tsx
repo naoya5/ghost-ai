@@ -11,10 +11,15 @@ import {
 import { UserButton } from "@clerk/nextjs";
 
 import { Button } from "@/components/ui/button";
+import { NavbarSaveButton } from "@/components/editor/canvas/navbar-save-button";
 import type { Project } from "@/types/project";
 
 interface EditorNavbarProps {
   currentProject: Project | null;
+  // True on a project workspace route, false on the editor home. Controls
+  // workspace-only navbar affordances (Save button) and hides the UserButton,
+  // which is shown only on the editor home navbar.
+  isWorkspace: boolean;
   isProjectsSidebarOpen: boolean;
   onToggleProjectsSidebar: () => void;
   isAiSidebarOpen: boolean;
@@ -25,6 +30,7 @@ interface EditorNavbarProps {
 
 export function EditorNavbar({
   currentProject,
+  isWorkspace,
   isProjectsSidebarOpen,
   onToggleProjectsSidebar,
   isAiSidebarOpen,
@@ -67,6 +73,7 @@ export function EditorNavbar({
         ) : null}
       </div>
       <div className="flex flex-1 items-center justify-end gap-1">
+        {isWorkspace ? <NavbarSaveButton /> : null}
         {currentProject ? (
           <>
             <Button
@@ -98,7 +105,7 @@ export function EditorNavbar({
             </Button>
           </>
         ) : null}
-        <UserButton />
+        {isWorkspace ? null : <UserButton />}
       </div>
     </header>
   );

@@ -4,15 +4,22 @@ import { useCallback, useRef, useState } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
+  EdgeToolbar,
   getSmoothStepPath,
+  useInternalNode,
   useReactFlow,
   type EdgeProps,
 } from "@xyflow/react";
 
-import { type CanvasEdge } from "@/types/canvas";
+import { type CanvasEdge, type CanvasNode } from "@/types/canvas";
+
+import { useCanvasDelete } from "./canvas-delete-context";
+import { getEdgeParams } from "./floating-edge-utils";
 
 export function CanvasEdgeRenderer({
   id,
+  source,
+  target,
   sourceX,
   sourceY,
   targetX,
@@ -24,17 +31,30 @@ export function CanvasEdgeRenderer({
   markerEnd,
 }: EdgeProps<CanvasEdge>) {
   const { updateEdgeData } = useReactFlow();
+  const deleteElements = useCanvasDelete();
   const [editing, setEditing] = useState(false);
   const [hovered, setHovered] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Floating edge: recompute the endpoints from the two nodes' current bounds so
+  // the edge always attaches to the border facing the other node, regardless of
+  // which fixed handle the connection was originally dropped on. Falls back to
+  // the handle coordinates React Flow provides if a node isn't measured yet.
+  const sourceNode = useInternalNode<CanvasNode>(source);
+  const targetNode = useInternalNode<CanvasNode>(target);
+
+  const floating =
+    sourceNode && targetNode
+      ? getEdgeParams(sourceNode, targetNode)
+      : null;
+
   const [edgePath, labelX, labelY] = getSmoothStepPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
+    sourceX: floating?.sx ?? sourceX,
+    sourceY: floating?.sy ?? sourceY,
+    sourcePosition: floating?.sourcePos ?? sourcePosition,
+    targetX: floating?.tx ?? targetX,
+    targetY: floating?.ty ?? targetY,
+    targetPosition: floating?.targetPos ?? targetPosition,
     borderRadius: 8,
   });
 
@@ -155,6 +175,47 @@ export function CanvasEdgeRenderer({
           )}
         </div>
       </EdgeLabelRenderer>
+
+      {/* Delete action — React Flow's official EdgeToolbar. It portals to the
+          edge layer and shows automatically while the edge is selected. Placed
+          just above the edge center so it never overlaps the label pill. */}
+      {!editing && (
+        <EdgeToolbar
+          edgeId={id}
+          x={labelX}
+          y={labelY}
+          alignY="bottom"
+          className="nodrag nopan"
+        >
+          <button
+            type="button"
+            title="Delete"
+            aria-label="Delete edge"
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteElements?.([], [id]);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-[#2a2a30] bg-[#18181c] text-[#c0c0cc] shadow-lg transition-colors hover:border-[#FF6166] hover:bg-[#3c1618] hover:text-[#FF6166] focus:outline-none"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
+          </button>
+        </EdgeToolbar>
+      )}
     </>
   );
 }
