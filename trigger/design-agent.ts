@@ -154,7 +154,11 @@ export const designAgentTask = task({
   maxDuration: 300,
   run: async (payload: DesignAgentPayload, { ctx }) => {
     const { prompt, roomId } = payload;
-    logger.log("design-agent starting", { prompt, roomId, ctx });
+    logger.log("design-agent starting", {
+      promptLength: prompt.length,
+      roomId,
+      ctx,
+    });
 
     const client = createLiveblocksClient();
 
@@ -247,6 +251,13 @@ async function applyActions(
   await mutateFlow<CanvasNode, CanvasEdge>({ client, roomId }, (flow) => {
     let counter = 0;
 
+    // Track known node/edge ids across the whole pass (seeded from the
+    // current flow, then updated as actions are applied) so we never save a
+    // duplicate node id or an edge that references a node that doesn't exist
+    // — either would produce a broken React Flow graph on the client.
+    const nodeIds = new Set(flow.nodes.map((node) => node.id));
+    const edgeIds = new Set(flow.edges.map((edge) => edge.id));
+
     for (const action of actions) {
       switch (action.type) {
         case "addNode": {
@@ -254,6 +265,7 @@ async function applyActions(
           const size = SHAPE_DEFAULT_SIZES[shape];
           counter += 1;
           const id = action.id ?? `ai-node-${counter}`;
+          if (nodeIds.has(id)) break; // duplicate id — skip
           flow.addNode({
             id,
             type: CANVAS_NODE_TYPE,
@@ -268,6 +280,7 @@ async function applyActions(
               height: action.height ?? size.height,
             },
           });
+          nodeIds.add(id);
           applied += 1;
           break;
         }
@@ -319,15 +332,25 @@ async function applyActions(
                 edge.source === action.id || edge.target === action.id,
             )
             .map((edge) => edge.id);
-          if (orphanEdgeIds.length > 0) flow.removeEdges(orphanEdgeIds);
+          if (orphanEdgeIds.length > 0) {
+            flow.removeEdges(orphanEdgeIds);
+            for (const edgeId of orphanEdgeIds) edgeIds.delete(edgeId);
+          }
           flow.removeNode(action.id);
+          nodeIds.delete(action.id);
           applied += 1;
           break;
         }
 
         case "addEdge": {
           if (!action.source || !action.target) break;
+          // Skip edges that reference a node not known to exist (not on the
+          // current flow and not added earlier in this pass).
+          if (!nodeIds.has(action.source) || !nodeIds.has(action.target)) {
+            break;
+          }
           const id = action.id ?? `${action.source}->${action.target}`;
+          if (edgeIds.has(id)) break; // duplicate edge id — skip
           flow.addEdge({
             id,
             type: CANVAS_EDGE_TYPE,
@@ -335,6 +358,7 @@ async function applyActions(
             target: action.target,
             data: action.edgeLabel ? { label: action.edgeLabel } : {},
           });
+          edgeIds.add(id);
           applied += 1;
           break;
         }
@@ -342,6 +366,7 @@ async function applyActions(
         case "deleteEdge": {
           if (!action.id) break;
           flow.removeEdge(action.id);
+          edgeIds.delete(action.id);
           applied += 1;
           break;
         }

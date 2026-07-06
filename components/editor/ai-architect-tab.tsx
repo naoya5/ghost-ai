@@ -35,6 +35,10 @@ export function AiArchitectTab({ projectId }: AiArchitectTabProps) {
   const [input, setInput] = useState("");
   const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Synchronous guard against a double-submit race (e.g. rapid Enter presses)
+  // — `isBusy` only updates after the first `await`, so state alone can't
+  // block a second `sendMessage` call that starts within the same tick.
+  const isSubmittingRef = useRef(false);
 
   // The conversation lives in the collaborative `ai-chat` feed, so user prompts
   // and the final AI reply sync across every session in the room.
@@ -99,7 +103,8 @@ export function AiArchitectTab({ projectId }: AiArchitectTabProps) {
 
   const sendMessage = async () => {
     const content = input.trim();
-    if (!content || isBusy) return;
+    if (!content || isBusy || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
 
     appendMessage("user", content);
     setInput("");
@@ -111,33 +116,30 @@ export function AiArchitectTab({ projectId }: AiArchitectTabProps) {
     updateMyPresence({ thinking: true });
 
     try {
-      // Start the durable design run. Canvas updates arrive live via Liveblocks,
-      // so the response is only used for the run id.
+      // Start the durable design run. The route mints the run + its scoped
+      // public token atomically, so a single response is all we need to
+      // subscribe. Canvas updates arrive live via Liveblocks.
       const response = await fetch("/api/ai/design", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: content, roomId: projectId, projectId }),
       });
       if (!response.ok) throw new Error("Failed to start design run");
-      const { runId } = (await response.json()) as { runId: string };
-
-      // Mint a public token scoped to this run so the client can subscribe.
-      const tokenResponse = await fetch("/api/ai/design/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runId }),
-      });
-      if (!tokenResponse.ok) throw new Error("Failed to mint run token");
-      const { token } = (await tokenResponse.json()) as { token: string };
+      const { runId, publicToken } = (await response.json()) as {
+        runId: string;
+        publicToken: string;
+      };
 
       // Hand off to `useRealtimeRun`; `onComplete` finishes the conversation.
-      setActiveRun({ runId, publicToken: token });
+      setActiveRun({ runId, publicToken });
     } catch {
       appendMessage(
         "assistant",
         "I couldn't start that design. Please try again.",
       );
       resetRun();
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 

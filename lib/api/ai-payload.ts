@@ -26,6 +26,13 @@ export interface SpecRequest {
   edges: unknown[];
 }
 
+// Boundary size caps for `parseSpecRequest`. These are sanity limits, not deep
+// validation (the task's Zod schema still validates element shape) — they just
+// stop a pathological payload (huge arrays / huge strings) from reaching the
+// trigger task and the LLM prompt it builds.
+const MAX_ARRAY_LENGTH = 500;
+const MAX_SERIALIZED_LENGTH = 500_000;
+
 // Boundary parser for `POST /api/ai/spec`. Only `roomId` is trusted here (it
 // resolves project access); `chatHistory`/`nodes`/`edges` are passed through as
 // arrays and deeply validated with Zod inside the `generate-spec` task. A
@@ -46,6 +53,22 @@ export function parseSpecRequest(body: unknown): SpecRequest | undefined {
   ) {
     return undefined;
   }
+
+  if (
+    chatHistory.length > MAX_ARRAY_LENGTH ||
+    nodes.length > MAX_ARRAY_LENGTH ||
+    edges.length > MAX_ARRAY_LENGTH
+  ) {
+    return undefined;
+  }
+
+  // Reject oversized payloads outright rather than deep-inspecting every
+  // element — this is a boundary check, not validation of shape.
+  const serializedLength =
+    JSON.stringify(chatHistory).length +
+    JSON.stringify(nodes).length +
+    JSON.stringify(edges).length;
+  if (serializedLength > MAX_SERIALIZED_LENGTH) return undefined;
 
   return { roomId, chatHistory, nodes, edges };
 }

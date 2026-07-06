@@ -25,6 +25,9 @@ function formatTime(timestamp: number): string {
 export function ChatTab() {
   const { messages, send } = useAiChatFeed();
   const self = useSelf((me) => me.info);
+  // Shared fallback so a message we send and the `isOwn` check below always
+  // agree on this participant's display name, even when it isn't set yet.
+  const selfName = self?.name ?? "Anonymous";
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -35,7 +38,7 @@ export function ChatTab() {
     try {
       send({
         id: crypto.randomUUID(),
-        sender: self?.name ?? "Anonymous",
+        sender: selfName,
         role: "user",
         content,
         timestamp: Date.now(),
@@ -71,7 +74,7 @@ export function ChatTab() {
         ) : (
           <div className="flex flex-col gap-3">
             {messages.map((message) => {
-              const isOwn = message.sender === self?.name;
+              const isOwn = message.sender === selfName;
               return (
                 <div
                   key={message.id}

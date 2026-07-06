@@ -1,4 +1,4 @@
-import { tasks } from "@trigger.dev/sdk";
+import { auth as triggerAuth, tasks } from "@trigger.dev/sdk";
 
 import { prisma } from "@/lib/prisma";
 import { parseDesignRequest } from "@/lib/api/ai-payload";
@@ -39,13 +39,36 @@ export async function POST(request: Request) {
     roomId,
   });
 
-  await prisma.taskRun.create({
-    data: {
-      runId: handle.id,
-      projectId,
-      userId: identity.userId,
-    },
-  });
+  // Create the ownership record and mint the scoped token together. If either
+  // step fails after the run was triggered, report a 500 rather than a
+  // partial 201 — the client must never think it can subscribe without a
+  // token in hand.
+  try {
+    await prisma.taskRun.create({
+      data: {
+        runId: handle.id,
+        projectId,
+        userId: identity.userId,
+      },
+    });
 
-  return Response.json({ runId: handle.id }, { status: 201 });
+    const publicToken = await triggerAuth.createPublicToken({
+      scopes: {
+        read: {
+          runs: [handle.id],
+        },
+      },
+      expirationTime: "1h",
+    });
+
+    return Response.json(
+      { runId: handle.id, publicToken },
+      { status: 201 },
+    );
+  } catch {
+    return Response.json(
+      { error: "Failed to finish starting the design run" },
+      { status: 500 },
+    );
+  }
 }

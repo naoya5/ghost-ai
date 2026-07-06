@@ -1,8 +1,17 @@
 import { get, put } from "@vercel/blob";
+import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { readJsonBody } from "@/lib/api/project-payload";
 import { getCurrentIdentity, getProjectAccess } from "@/lib/project-access";
+
+// Boundary shape for the saved canvas: just the two React Flow arrays. Element
+// shape is intentionally left loose (`z.unknown()`) — this only guards against
+// a malformed/non-canvas body, not a full re-validation of node/edge schema.
+const canvasBodySchema = z.object({
+  nodes: z.array(z.unknown()),
+  edges: z.array(z.unknown()),
+});
 
 interface RouteContext {
   params: Promise<{ projectId: string }>;
@@ -22,10 +31,12 @@ export async function PUT(request: Request, { params }: RouteContext) {
     return Response.json({ error: "Not Found" }, { status: 404 });
   }
 
-  const canvas = await readJsonBody(request);
-  if (!canvas) {
+  const body = await readJsonBody(request);
+  const parsed = canvasBodySchema.safeParse(body);
+  if (!parsed.success) {
     return Response.json({ error: "canvas is required" }, { status: 400 });
   }
+  const canvas = parsed.data;
 
   const blob = await put(`canvas/${projectId}.json`, JSON.stringify(canvas), {
     access: "private",

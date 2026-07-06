@@ -158,17 +158,33 @@ export const generateSpec = task({
         data: { projectId, filePath: "" },
       });
 
-      const blob = await put(`specs/${projectId}/${record.id}.md`, spec, {
-        access: "private",
-        contentType: "text/markdown",
-        addRandomSuffix: false,
-        allowOverwrite: true,
-      });
+      // If the blob upload or the follow-up update fails, delete the
+      // provisional row rather than leaving a `filePath: ""` record behind —
+      // that would show up in the specs list with a 404 download. This also
+      // makes the whole create -> upload -> update sequence self-cleaning, so
+      // a Trigger.dev retry after a failure here starts clean instead of
+      // orphaning rows or blobs (see the retry note below).
+      try {
+        const blob = await put(`specs/${projectId}/${record.id}.md`, spec, {
+          access: "private",
+          contentType: "text/markdown",
+          addRandomSuffix: false,
+          allowOverwrite: true,
+        });
 
-      await prisma.projectSpec.update({
-        where: { id: record.id },
-        data: { filePath: blob.url },
-      });
+        await prisma.projectSpec.update({
+          where: { id: record.id },
+          data: { filePath: blob.url },
+        });
+      } catch (persistError) {
+        await prisma.projectSpec
+          .delete({ where: { id: record.id } })
+          .catch(() => {
+            // Best-effort cleanup; if this also fails there's nothing more we
+            // can do here, so surface the original error below.
+          });
+        throw persistError;
+      }
 
       metadata.set("status", "completed");
       metadata.set("message", "Spec ready.");
@@ -184,8 +200,11 @@ export const generateSpec = task({
       logger.error("generate-spec failed", { error });
       metadata.set("status", "error");
       metadata.set("message", "Spec generation failed.");
-      // Rethrow so the run is marked FAILED for realtime tracking. Generation
-      // has no side effects, so a Trigger.dev retry is safe.
+      // Rethrow so the run is marked FAILED for realtime tracking. A failure
+      // during `generateText` has no side effects yet, and a failure during
+      // the create -> upload -> update sequence above is cleaned up (the
+      // provisional `projectSpec` row is deleted before the rethrow), so a
+      // Trigger.dev retry never finds a partial/duplicate spec to build on.
       throw error;
     }
   },

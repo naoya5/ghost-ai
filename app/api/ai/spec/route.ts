@@ -1,4 +1,4 @@
-import { tasks } from "@trigger.dev/sdk";
+import { auth as triggerAuth, tasks } from "@trigger.dev/sdk";
 
 import { prisma } from "@/lib/prisma";
 import { parseSpecRequest } from "@/lib/api/ai-payload";
@@ -43,13 +43,37 @@ export async function POST(request: Request) {
     edges,
   });
 
-  await prisma.taskRun.create({
-    data: {
-      runId: handle.id,
-      projectId: access.project.id,
-      userId: identity.userId,
-    },
-  });
+  // Create the ownership record and mint the scoped token together. If either
+  // step fails after the run was triggered, the run itself is orphaned (the
+  // client never learns its id), but that's the same failure mode as before —
+  // what we must avoid is a client that thinks it succeeded but has no token
+  // to subscribe with. Report a 500 in that case instead of a partial 201.
+  try {
+    await prisma.taskRun.create({
+      data: {
+        runId: handle.id,
+        projectId: access.project.id,
+        userId: identity.userId,
+      },
+    });
 
-  return Response.json({ runId: handle.id }, { status: 201 });
+    const publicToken = await triggerAuth.createPublicToken({
+      scopes: {
+        read: {
+          runs: [handle.id],
+        },
+      },
+      expirationTime: "1h",
+    });
+
+    return Response.json(
+      { runId: handle.id, publicToken },
+      { status: 201 },
+    );
+  } catch {
+    return Response.json(
+      { error: "Failed to finish starting the spec run" },
+      { status: 500 },
+    );
+  }
 }

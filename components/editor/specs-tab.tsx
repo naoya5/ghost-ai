@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useEdges, useNodes } from "@xyflow/react";
+import { useRealtimeRun } from "@trigger.dev/react-hooks";
 import {
   DownloadIcon,
   FileTextIcon,
@@ -13,9 +15,19 @@ import {
   SpecPreviewDialog,
   type SpecSummary,
 } from "@/components/editor/spec-preview-dialog";
+import { useAiChatFeed } from "@/hooks/useAiChatFeed";
+import type { generateSpec } from "@/trigger/generate-spec";
 
 interface SpecsTabProps {
   projectId: string;
+}
+
+// The scoped run subscription for an in-flight spec generation: the durable
+// run id plus the public token minted for it. `null` when idle. Mirrors the
+// `ActiveRun` shape in `ai-architect-tab.tsx`.
+interface ActiveRun {
+  runId: string;
+  publicToken: string;
 }
 
 // Triggers a browser download of a spec through the existing download route.
@@ -35,17 +47,29 @@ export function SpecsTab({ projectId }: SpecsTabProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<SpecSummary | null>(null);
+  const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
+  // The current canvas + chat, read live from the same Liveblocks-backed
+  // React Flow instance the AI Architect tab draws on (this tab is mounted
+  // inside the same `ReactFlowProvider`, see `flow-canvas.tsx`), so a
+  // generated spec is grounded in what's actually on the canvas right now.
+  const nodes = useNodes();
+  const edges = useEdges();
+  const { messages } = useAiChatFeed();
 
-    const load = async () => {
+  const isGenerating = activeRun !== null;
+
+  // Shared fetch logic for the specs list, factored out so the post-generation
+  // refresh (triggered from `onComplete` below, not an effect) can reuse it.
+  const loadSpecs = useCallback(
+    async (signal?: AbortSignal) => {
       setIsLoading(true);
       setError(null);
       try {
         const response = await fetch(
           `/api/projects/${encodeURIComponent(projectId)}/specs`,
-          { signal: controller.signal },
+          { signal },
         );
         if (!response.ok) {
           throw new Error(`Request failed (${response.status})`);
@@ -53,23 +77,73 @@ export function SpecsTab({ projectId }: SpecsTabProps) {
         const data = (await response.json()) as { specs: SpecSummary[] };
         setSpecs(data.specs);
       } catch (cause) {
-        if (controller.signal.aborted) {
+        if (signal?.aborted) {
           return;
         }
         setError(
           cause instanceof Error ? cause.message : "Failed to load specs",
         );
       } finally {
-        if (!controller.signal.aborted) {
+        if (!signal?.aborted) {
           setIsLoading(false);
         }
       }
-    };
+    },
+    [projectId],
+  );
 
+  useEffect(() => {
+    const controller = new AbortController();
+
+    // Call the shared loader through a locally-defined async function (rather
+    // than invoking `loadSpecs` directly) so this stays the same shape as a
+    // plain effect-owned fetch — matches the project's existing convention.
+    const load = () => loadSpecs(controller.signal);
     void load();
 
     return () => controller.abort();
-  }, [projectId]);
+  }, [loadSpecs]);
+
+  // Subscribe to the durable spec-generation run. `enabled` is false until we
+  // have both a run id and its scoped token, so the hook never fires without
+  // credentials (mirrors `ai-architect-tab.tsx`).
+  useRealtimeRun<typeof generateSpec>(activeRun?.runId, {
+    accessToken: activeRun?.publicToken,
+    enabled: activeRun !== null,
+    onComplete: (run, error) => {
+      if (error || run.isFailed || run.isCancelled) {
+        setGenerateError("Spec generation failed. Please try again.");
+      } else {
+        void loadSpecs();
+      }
+      setActiveRun(null);
+    },
+  });
+
+  const handleGenerate = useCallback(async () => {
+    if (isGenerating) return;
+    setGenerateError(null);
+    try {
+      const response = await fetch("/api/ai/spec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomId: projectId,
+          chatHistory: messages,
+          nodes,
+          edges,
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to start spec run");
+      const { runId, publicToken } = (await response.json()) as {
+        runId: string;
+        publicToken: string;
+      };
+      setActiveRun({ runId, publicToken });
+    } catch {
+      setGenerateError("Couldn't start spec generation. Please try again.");
+    }
+  }, [isGenerating, projectId, messages, nodes, edges]);
 
   const handleDownload = useCallback(
     (spec: SpecSummary) => downloadSpec(projectId, spec),
@@ -80,11 +154,22 @@ export function SpecsTab({ projectId }: SpecsTabProps) {
     <div className="flex h-full flex-col gap-4 px-3 py-4">
       <Button
         type="button"
+        onClick={() => void handleGenerate()}
+        disabled={isGenerating}
         className="w-full bg-accent-ai text-white hover:bg-accent-ai/90"
       >
-        <SparklesIcon />
-        Generate Spec
+        {isGenerating ? (
+          <Loader2Icon className="animate-spin" />
+        ) : (
+          <SparklesIcon />
+        )}
+        {isGenerating ? "Generating…" : "Generate Spec"}
       </Button>
+      {generateError ? (
+        <p role="alert" className="-mt-2 px-1 text-xs text-state-error">
+          {generateError}
+        </p>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex items-center gap-2 px-1 text-sm text-copy-muted">
