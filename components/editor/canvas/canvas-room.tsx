@@ -1,5 +1,6 @@
 "use client";
 
+import { LiveList } from "@liveblocks/client";
 import {
   ClientSideSuspense,
   LiveblocksProvider,
@@ -36,7 +37,7 @@ export function CanvasRoom({ roomId }: CanvasRoomProps) {
       <RoomProvider
         id={roomId}
         initialPresence={{ cursor: null, thinking: false }}
-        initialStorage={{ "ai-status-feed": null }}
+        initialStorage={{ "ai-status-feed": null, "ai-chat": new LiveList([]) }}
       >
         <CanvasErrorBoundary fallback={<CanvasError />}>
           <ClientSideSuspense fallback={<CanvasLoading />}>

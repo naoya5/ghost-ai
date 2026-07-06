@@ -1,7 +1,9 @@
 // Define Liveblocks types for your application
 // https://liveblocks.io/docs/api-reference/liveblocks-react#Typing-your-data
+import type { LiveList } from "@liveblocks/client";
+
 import type { AiActivityEvent } from "@/types/ai-activity";
-import type { AiStatusMessage } from "@/types/tasks";
+import type { AiStatusMessage, ChatFeedMessage } from "@/types/tasks";
 
 declare global {
   interface Liveblocks {
@@ -17,8 +19,13 @@ declare global {
     // See `types/tasks.ts` and `hooks/useAiStatusFeed.ts`. (The React Flow
     // diagram is stored by `@liveblocks/react-flow` under its own `flow` key,
     // which it manages internally and does not surface on this interface.)
+    // `ai-chat` is a separate, ordered log of collaborative room chat messages
+    // (a `LiveList` so concurrent sends from different participants append
+    // without clobbering each other). It is deliberately kept apart from
+    // `ai-status-feed`. See `types/tasks.ts` and `hooks/useAiChatFeed.ts`.
     Storage: {
       "ai-status-feed": AiStatusMessage | null;
+      "ai-chat": LiveList<ChatFeedMessage>;
     };
 
     // Custom user info set when authenticating with a secret key

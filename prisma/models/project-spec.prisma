@@ -1,0 +1,12 @@
+// Metadata for a generated technical spec. The Markdown content itself lives in
+// Vercel Blob (at `specs/{projectId}/{specId}.md`); `filePath` holds the blob
+// URL. Metadata-only, mirroring the canvas metadata+blob storage model.
+model ProjectSpec {
+  id        String   @id @default(cuid())
+  projectId String
+  filePath  String
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}

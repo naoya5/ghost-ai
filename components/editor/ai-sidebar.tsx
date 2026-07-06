@@ -3,6 +3,7 @@
 import { BotIcon, Loader2Icon, XIcon } from "lucide-react";
 
 import { AiArchitectTab } from "@/components/editor/ai-architect-tab";
+import { ChatTab } from "@/components/editor/chat-tab";
 import { SpecsTab } from "@/components/editor/specs-tab";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -76,6 +77,9 @@ export function AiSidebar({ isOpen, onClose, projectId }: AiSidebarProps) {
           <TabsTrigger value="architect" className={TAB_TRIGGER_CLASS}>
             AI Architect
           </TabsTrigger>
+          <TabsTrigger value="chat" className={TAB_TRIGGER_CLASS}>
+            Chat
+          </TabsTrigger>
           <TabsTrigger value="specs" className={TAB_TRIGGER_CLASS}>
             Specs
           </TabsTrigger>
@@ -87,10 +91,16 @@ export function AiSidebar({ isOpen, onClose, projectId }: AiSidebarProps) {
           <AiArchitectTab projectId={projectId} />
         </TabsContent>
         <TabsContent
+          value="chat"
+          className="-mx-3 min-h-0 flex-1 overflow-hidden"
+        >
+          <ChatTab />
+        </TabsContent>
+        <TabsContent
           value="specs"
           className="-mx-3 min-h-0 flex-1 overflow-hidden"
         >
-          <SpecsTab />
+          <SpecsTab projectId={projectId} />
         </TabsContent>
       </Tabs>
     </aside>

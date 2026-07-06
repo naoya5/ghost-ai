@@ -1,19 +1,17 @@
 "use client";
 
-import { useUpdateMyPresence } from "@liveblocks/react/suspense";
+import { useSelf, useUpdateMyPresence } from "@liveblocks/react/suspense";
+import { useRealtimeRun } from "@trigger.dev/react-hooks";
 import { BotIcon, Loader2Icon, SendHorizontalIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useAiChatFeed } from "@/hooks/useAiChatFeed";
 import { useAiStatusFeed } from "@/hooks/useAiStatusFeed";
 import { cn } from "@/lib/utils";
-
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-}
+import type { ChatRole } from "@/types/tasks";
+import type { designAgentTask } from "@/trigger/design-agent";
 
 const STARTER_PROMPTS = [
   "Design an e-commerce backend",
@@ -21,75 +19,125 @@ const STARTER_PROMPTS = [
   "Build a CI/CD pipeline",
 ];
 
+// The scoped run subscription: the durable design run plus the public token
+// minted for it. `null` when no run is in flight.
+interface ActiveRun {
+  runId: string;
+  publicToken: string;
+}
+
 interface AiArchitectTabProps {
   // The project id doubles as the Liveblocks room id (see architecture-context).
   projectId: string;
 }
 
 export function AiArchitectTab({ projectId }: AiArchitectTabProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const messageCounter = useRef(0);
+  const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Shared generation state. `isActive` reflects the room-wide `ai-status-feed`,
-  // so the input/send button lock for *everyone* while a generation is running.
-  const { isActive, publish } = useAiStatusFeed();
+  // The conversation lives in the collaborative `ai-chat` feed, so user prompts
+  // and the final AI reply sync across every session in the room.
+  const { messages, send } = useAiChatFeed();
+  const self = useSelf((me) => me.info);
+
+  // Shared generation state. `message` is the latest `ai-status-feed` entry;
+  // `isActive` reflects the room-wide flag, so the input/send button lock for
+  // *everyone* while a generation is running.
+  const { message, isActive, publish } = useAiStatusFeed();
   const updateMyPresence = useUpdateMyPresence();
 
-  // Local submit spans the round-trip to publish the shared status; combine with
-  // the shared flag so the submitting user's controls lock instantly.
-  const isBusy = isActive || isSubmitting;
+  // A run this client kicked off is in flight from submit until `useRealtimeRun`
+  // reports completion. Combine with the room-wide flag so the controls lock
+  // instantly for the submitter and stay locked for everyone during the run.
+  const isRunning = activeRun !== null;
+  const isBusy = isActive || isRunning;
 
-  const addMessage = (role: ChatMessage["role"], content: string) => {
-    messageCounter.current += 1;
-    setMessages((prev) => [
-      ...prev,
-      { id: `msg-${messageCounter.current}`, role, content },
-    ]);
+  const appendMessage = (role: ChatRole, content: string) => {
+    try {
+      send({
+        id: crypto.randomUUID(),
+        sender: role === "user" ? (self?.name ?? "You") : "Ghost AI",
+        role,
+        content,
+        timestamp: Date.now(),
+      });
+    } catch {
+      // A failed append should never wedge the run lifecycle; swallow it (the
+      // status feed / canvas still reflect what happened).
+    }
   };
+
+  // Clear the run + shared status/presence back to idle.
+  const resetRun = () => {
+    setActiveRun(null);
+    publish(null);
+    updateMyPresence({ thinking: false });
+  };
+
+  // Subscribe to the durable run. `enabled` is false until we have both a run id
+  // and its scoped token, so the hook never fires without credentials. On
+  // completion we push the AI's closing message and reset shared state.
+  useRealtimeRun<typeof designAgentTask>(activeRun?.runId, {
+    accessToken: activeRun?.publicToken,
+    enabled: activeRun !== null,
+    onComplete: (run, error) => {
+      if (error || run.isFailed || run.isCancelled) {
+        appendMessage(
+          "assistant",
+          "The design run didn't finish. Please try again.",
+        );
+      } else {
+        appendMessage(
+          "assistant",
+          "Done — your architecture is on the canvas. Watch it appear live.",
+        );
+      }
+      resetRun();
+    },
+  });
 
   const sendMessage = async () => {
     const content = input.trim();
     if (!content || isBusy) return;
 
-    addMessage("user", content);
+    appendMessage("user", content);
     setInput("");
-    setIsSubmitting(true);
 
-    // Publish the shared AI activity signal: everyone in the room sees the
-    // status feed light up and this participant's cursor gains a thinking
-    // spinner. Cleared in `finally` so the room returns to idle.
+    // Light up the shared status feed + this participant's thinking cursor for
+    // the whole run; cleared in `resetRun` once the run completes (or fails to
+    // start below).
     publish({ text: "Ghost AI is designing your architecture…" });
     updateMyPresence({ thinking: true });
 
-    // Kick off the durable design run. The canvas updates (and AI presence /
-    // status) arrive live through Liveblocks, so this call only needs to start
-    // the run — the result is not awaited here.
     try {
+      // Start the durable design run. Canvas updates arrive live via Liveblocks,
+      // so the response is only used for the run id.
       const response = await fetch("/api/ai/design", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: content, roomId: projectId, projectId }),
       });
-      if (!response.ok) {
-        addMessage(
-          "assistant",
-          "I couldn't start that design. Please try again.",
-        );
-      } else {
-        addMessage(
-          "assistant",
-          "On it — I'm drawing your architecture on the canvas now. Watch it appear live.",
-        );
-      }
+      if (!response.ok) throw new Error("Failed to start design run");
+      const { runId } = (await response.json()) as { runId: string };
+
+      // Mint a public token scoped to this run so the client can subscribe.
+      const tokenResponse = await fetch("/api/ai/design/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId }),
+      });
+      if (!tokenResponse.ok) throw new Error("Failed to mint run token");
+      const { token } = (await tokenResponse.json()) as { token: string };
+
+      // Hand off to `useRealtimeRun`; `onComplete` finishes the conversation.
+      setActiveRun({ runId, publicToken: token });
     } catch {
-      addMessage("assistant", "Something went wrong. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-      publish(null);
-      updateMyPresence({ thinking: false });
+      appendMessage(
+        "assistant",
+        "I couldn't start that design. Please try again.",
+      );
+      resetRun();
     }
   };
 
@@ -134,23 +182,23 @@ export function AiArchitectTab({ projectId }: AiArchitectTabProps) {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {messages.map((message) => (
+            {messages.map((chatMessage) => (
               <div
-                key={message.id}
+                key={chatMessage.id}
                 className={cn(
                   "flex",
-                  message.role === "user" ? "justify-end" : "justify-start",
+                  chatMessage.role === "user" ? "justify-end" : "justify-start",
                 )}
               >
                 <div
                   className={cn(
                     "max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap break-words",
-                    message.role === "user"
+                    chatMessage.role === "user"
                       ? "border-2 border-brand/50 bg-accent-dim text-copy-primary"
                       : "border border-surface-border bg-elevated text-accent-ai-text",
                   )}
                 >
-                  {message.content}
+                  {chatMessage.content}
                 </div>
               </div>
             ))}
@@ -158,6 +206,18 @@ export function AiArchitectTab({ projectId }: AiArchitectTabProps) {
         )}
       </div>
       <div className="shrink-0 border-t border-surface-border p-3">
+        {isBusy ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-2 flex items-center gap-2 rounded-lg border border-accent-ai/30 bg-accent-ai/10 px-2.5 py-1.5 text-xs font-medium text-accent-ai-text"
+          >
+            <Loader2Icon className="h-3.5 w-3.5 shrink-0 animate-spin" />
+            <span className="truncate">
+              {message?.text ?? "Ghost AI is working…"}
+            </span>
+          </div>
+        ) : null}
         <div className="flex items-end gap-2">
           <Textarea
             ref={textareaRef}
