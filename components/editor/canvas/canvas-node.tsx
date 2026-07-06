@@ -1,9 +1,23 @@
 "use client";
 
 import { useCallback, useRef, useState, type CSSProperties } from "react";
-import { Handle, NodeResizer, Position, useReactFlow, type NodeProps } from "@xyflow/react";
+import {
+  Handle,
+  NodeResizer,
+  Position,
+  useConnection,
+  useReactFlow,
+  type NodeProps,
+} from "@xyflow/react";
 
-import { NODE_COLORS, getNodeColorPair, type CanvasNode, type NodeColor } from "@/types/canvas";
+import {
+  NODE_COLORS,
+  getNodeColorPair,
+  type CanvasNode,
+  type NodeColor,
+} from "@/types/canvas";
+
+import { useCanvasDelete } from "./canvas-delete-context";
 
 const HANDLE_POSITIONS = [
   Position.Top,
@@ -11,6 +25,7 @@ const HANDLE_POSITIONS = [
   Position.Bottom,
   Position.Left,
 ];
+const LEGACY_BODY_TARGET_HANDLE_ID = "body-target";
 
 // Minimum node dimensions
 const MIN_WIDTH = 80;
@@ -21,9 +36,10 @@ const MIN_HEIGHT = 40;
 interface ColorToolbarProps {
   activeColor: string;
   onColorSelect: (color: NodeColor) => void;
+  onDelete: () => void;
 }
 
-function ColorToolbar({ activeColor, onColorSelect }: ColorToolbarProps) {
+function ColorToolbar({ activeColor, onColorSelect, onDelete }: ColorToolbarProps) {
   const stopEvent = useCallback((e: React.MouseEvent | React.PointerEvent) => {
     e.stopPropagation();
   }, []);
@@ -70,6 +86,40 @@ function ColorToolbar({ activeColor, onColorSelect }: ColorToolbarProps) {
           </button>
         );
       })}
+
+      {/* Divider between the color swatches and the delete action */}
+      <span className="mx-0.5 h-5 w-px flex-shrink-0 bg-[#2a2a30]" />
+
+      {/* Delete this node */}
+      <button
+        type="button"
+        title="Delete"
+        aria-label="Delete node"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg text-[#c0c0cc] transition-colors hover:bg-[#3c1618] hover:text-[#FF6166] focus:outline-none"
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 6h18" />
+          <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+          <path d="M10 11v6" />
+          <path d="M14 11v6" />
+        </svg>
+      </button>
     </div>
   );
 }
@@ -462,7 +512,49 @@ const handleStyle: CSSProperties = {
   backgroundColor: "#ffffff",
   borderRadius: "50%",
   transition: "opacity 0.15s ease",
+  // Keep every handle above the shape body. The shapes render after the handles
+  // in the DOM, so without this their fill sits on top of the right/bottom/left
+  // handles and swallows the pointerdown that starts a connection — leaving only
+  // the top handle (whose dot pokes out above the node) reliably connectable.
+  zIndex: 3,
 };
+
+function getTargetHandleStyle(acceptingConnection: boolean): CSSProperties {
+  return {
+    ...handleStyle,
+    pointerEvents: acceptingConnection ? "auto" : "none",
+    zIndex: acceptingConnection ? 5 : 2,
+  };
+}
+
+// Full-node "drop anywhere" target handle. The four edge handles only accept a
+// drop within `connectionRadius` (a small px window) of their center, so most of
+// a node's surface used to be a dead zone where releasing a connection created
+// no edge — the drag line stretched but nothing connected. This invisible handle
+// covers the entire node so a connection can be dropped anywhere on it. It stays
+// `pointerEvents: none` at rest (so double-click-to-edit, node drag and starting
+// a connection from the source handles all work), and only becomes an active drop
+// target while another node's connection is in progress. It keeps the historic
+// `body-target` id so edges saved against it still resolve.
+function getBodyTargetHandleStyle(acceptingConnection: boolean): CSSProperties {
+  return {
+    position: "absolute",
+    inset: 0,
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    transform: "none",
+    borderRadius: 0,
+    border: "none",
+    background: "transparent",
+    opacity: 0,
+    // Sit above the shape body (so it catches the drop) but below the four edge
+    // target handles (z 5), so an exact drop on an edge handle still wins.
+    zIndex: acceptingConnection ? 4 : 0,
+    pointerEvents: acceptingConnection ? "auto" : "none",
+  };
+}
 
 export function CanvasNodeRenderer({
   id,
@@ -472,6 +564,17 @@ export function CanvasNodeRenderer({
   height,
 }: NodeProps<CanvasNode>) {
   const { updateNodeData } = useReactFlow();
+  const deleteElements = useCanvasDelete();
+  // True while a connection is being dragged anywhere on the canvas — reveal
+  // every node's handles so they are visible drop targets, not just the hovered
+  // node's. Without this, target handles stay at opacity 0 during the drag
+  // (the pointer is captured, so hover never fires) and users can't aim.
+  const connecting = useConnection((c) => c.inProgress);
+  const connectionSourceNodeId = useConnection((c) => c.fromNode?.id ?? null);
+  const acceptingConnection =
+    connecting &&
+    connectionSourceNodeId !== null &&
+    connectionSourceNodeId !== id;
   const [editing, setEditing] = useState(false);
   const [nodeHovered, setNodeHovered] = useState(false);
 
@@ -503,6 +606,10 @@ export function CanvasNodeRenderer({
     [id, updateNodeData],
   );
 
+  const handleDelete = useCallback(() => {
+    deleteElements?.([id], []);
+  }, [deleteElements, id]);
+
   const svgShapes = ["diamond", "hexagon", "cylinder"] as const;
   type SvgShape = (typeof svgShapes)[number];
   const isSvgShape = (s: string): s is SvgShape =>
@@ -520,6 +627,7 @@ export function CanvasNodeRenderer({
           <ColorToolbar
             activeColor={data.color}
             onColorSelect={handleColorSelect}
+            onDelete={handleDelete}
           />
         )}
         <NodeResizer
@@ -541,17 +649,35 @@ export function CanvasNodeRenderer({
           }}
         />
         {HANDLE_POSITIONS.map((position) => (
-          <Handle
-            key={position}
-            id={position}
-            type="source"
-            position={position}
-            style={{
-              ...handleStyle,
-              opacity: nodeHovered || selected ? 1 : 0,
-            }}
-          />
+          <div key={position}>
+            <Handle
+              id={position}
+              type="source"
+              position={position}
+              style={{
+                ...handleStyle,
+                opacity: nodeHovered || selected || connecting ? 1 : 0,
+              }}
+            />
+            <Handle
+              id={position}
+              type="target"
+              position={position}
+              className="nodrag nopan"
+              style={{
+                ...getTargetHandleStyle(acceptingConnection),
+                opacity: nodeHovered || selected || connecting ? 1 : 0,
+              }}
+            />
+          </div>
         ))}
+        <Handle
+          id={LEGACY_BODY_TARGET_HANDLE_ID}
+          type="target"
+          position={Position.Top}
+          className="nodrag nopan"
+          style={getBodyTargetHandleStyle(acceptingConnection)}
+        />
         {data.shape === "diamond" && (
           <DiamondShape
             fill={fill}
@@ -611,6 +737,7 @@ export function CanvasNodeRenderer({
         <ColorToolbar
           activeColor={data.color}
           onColorSelect={handleColorSelect}
+          onDelete={handleDelete}
         />
       )}
       <NodeResizer
@@ -632,17 +759,35 @@ export function CanvasNodeRenderer({
         }}
       />
       {HANDLE_POSITIONS.map((position) => (
-        <Handle
-          key={position}
-          id={position}
-          type="source"
-          position={position}
-          style={{
-            ...handleStyle,
-            opacity: nodeHovered || selected ? 1 : 0,
-          }}
-        />
+        <div key={position}>
+          <Handle
+            id={position}
+            type="source"
+            position={position}
+            style={{
+              ...handleStyle,
+              opacity: nodeHovered || selected || connecting ? 1 : 0,
+            }}
+          />
+          <Handle
+            id={position}
+            type="target"
+            position={position}
+            className="nodrag nopan"
+            style={{
+              ...getTargetHandleStyle(acceptingConnection),
+              opacity: nodeHovered || selected || connecting ? 1 : 0,
+            }}
+          />
+        </div>
       ))}
+      <Handle
+        id={LEGACY_BODY_TARGET_HANDLE_ID}
+        type="target"
+        position={Position.Top}
+        className="nodrag nopan"
+        style={getBodyTargetHandleStyle(acceptingConnection)}
+      />
       {data.shape === "rectangle" && (
         <RectangleShape
           fill={fill}

@@ -1,0 +1,13 @@
+// Tracks Trigger.dev runs so the server can verify ownership before issuing a
+// run-scoped public token to the client. Metadata-only: the run's actual state
+// and output live in Trigger.dev, not here.
+model TaskRun {
+  id        String   @id @default(cuid())
+  runId     String   @unique
+  projectId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  // `runId @unique` already provides the unique index the spec asks for on runId.
+  @@index([userId, projectId])
+}

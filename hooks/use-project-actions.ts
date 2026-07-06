@@ -108,6 +108,10 @@ export function useProjectActions(): UseProjectActionsResult {
       const data = (await response.json()) as { project: { id: string } };
       reset();
       router.push(`/editor/${data.project.id}`);
+      // Refresh the shared /editor layout so its server-fetched projects list
+      // includes the just-created project. Without this the navbar can't
+      // resolve currentProject and renders in a degraded state (Save only).
+      router.refresh();
     } finally {
       setIsSubmitting(false);
     }
